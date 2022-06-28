@@ -42,6 +42,7 @@ def distribute():
     command.append("")
 
     # run processes
+    gpus = [str(gpu) for gpu in gpus]
     processes = []
     for rank, local_gpu_id in enumerate(gpus):
         my_env = os.environ.copy()
