@@ -1226,7 +1226,7 @@ class Trainer:
                         self.total_steps_done,
                     )
 
-            self.dashboard_logger.flush()
+            self.dashboard_logger.flush(step=step)
 
         self.total_steps_done += 1
         self.callbacks.on_train_step_end(self)
