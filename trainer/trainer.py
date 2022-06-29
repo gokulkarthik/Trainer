@@ -429,7 +429,11 @@ class Trainer:
             self.test_samples = None
 
         # only use a subset of the samples if small_run is set
-        self.setup_small_run(args.small_run)
+        if args.small_run is not None:
+            print(f"[!] Small Run, only using {args.small_run} samples.")
+            self.train_samples = None if self.train_samples is None else self.train_samples[: args.small_run]
+            self.eval_samples = None if self.eval_samples is None else self.eval_samples[: args.small_run]
+            self.test_samples = None if self.test_samples is None else self.test_samples[: args.small_run]
 
         # init the model
         if model is None and get_model is None:
@@ -542,14 +546,6 @@ class Trainer:
         if dashboard_logger is None:
             dashboard_logger = logger_factory(config, output_path)
         return dashboard_logger, c_logger
-
-    def setup_small_run(self, small_run: int = None):
-        """Use a subset of samples for training, evaluation and testing."""
-        if small_run is not None:
-            logger.info("[!] Small Run, only using %i samples.", small_run)
-            self.train_samples = None if self.train_samples is None else self.train_samples[:small_run]
-            self.eval_samples = None if self.eval_samples is None else self.eval_samples[:small_run]
-            self.test_samples = None if self.test_samples is None else self.test_samples[:small_run]
 
     def init_training(
         self, args: TrainerArgs, coqpit_overrides: Dict, config: Coqpit = None
@@ -1236,7 +1232,7 @@ class Trainer:
         self.callbacks.on_train_step_end(self)
         return outputs, loss_dict
 
-    def train_epoch(self) -> None:
+    def train_epoch(self, epoch) -> None:
         """Main entry point for the training loop. Run training on the all training samples."""
         # initialize the data loader
         self.train_loader = self.get_train_dataloader(
@@ -1269,7 +1265,7 @@ class Trainer:
                 self.scheduler.step()
         # plot self.epochs_done Stats
         if self.args.rank == 0:
-            epoch_stats = {"epoch_time": epoch_time}
+            epoch_stats = {"epoch_time": epoch_time, "epoch":epoch}
             epoch_stats.update(self.keep_avg_train.avg_values)
             self.dashboard_logger.train_epoch_stats(self.total_steps_done, epoch_stats)
             if self.config.model_param_stats:
@@ -1416,13 +1412,10 @@ class Trainer:
                 test_outputs = self.model.module.test(self.training_assets, self.test_loader, None)
             else:
                 test_outputs = self.model.test(self.training_assets, self.test_loader, None)
-        if hasattr(self.model, "test_log") or (self.num_gpus > 1 and hasattr(self.model.module, "test_log")):
-            if self.num_gpus > 1:
-                self.model.module.test_log(
-                    test_outputs, self.dashboard_logger, self.training_assets, self.total_steps_done
-                )
-            else:
-                self.model.test_log(test_outputs, self.dashboard_logger, self.training_assets, self.total_steps_done)
+        if hasattr(self.model, "test_log"): 
+            self.model.test_log(test_outputs, self.dashboard_logger, self.training_assets, self.total_steps_done)
+        elif (self.num_gpus > 1 and hasattr(self.model.module, "test_log")):
+            self.model.module.test_log(test_outputs, self.dashboard_logger, self.training_assets, self.total_steps_done)
 
     def _restore_best_loss(self):
         """Restore the best loss from the args.best_path if provided else
@@ -1482,7 +1475,7 @@ class Trainer:
             self.epochs_done = epoch
             self.c_logger.print_epoch_start(epoch, self.config.epochs, self.output_path)
             if not self.skip_train_epoch:
-                self.train_epoch()
+                self.train_epoch(epoch)
             if self.config.run_eval:
                 self.eval_epoch()
             if epoch >= self.config.test_delay_epochs and self.args.rank <= 0:
@@ -1529,15 +1522,15 @@ class Trainer:
 
             >>> import torch
             >>> profiler = torch.profiler.profile(
-            >>>        activities=[
-            >>>         torch.profiler.ProfilerActivity.CPU,
-            >>>         torch.profiler.ProfilerActivity.CUDA,
-            >>>     ],
-            >>>     schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
-            >>>     on_trace_ready=torch.profiler.tensorboard_trace_handler("./profiler/"),
-            >>>     record_shapes=True,
-            >>>     profile_memory=True,
-            >>>     with_stack=True,
+            >>>    activities=[
+            >>>     torch.profiler.ProfilerActivity.CPU,
+            >>>     torch.profiler.ProfilerActivity.CUDA,
+            >>> ],
+            >>> schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
+            >>> on_trace_ready=torch.profiler.tensorboard_trace_handler("./profiler/"),
+            >>> record_shapes=True,
+            >>> profile_memory=True,
+            >>> with_stack=True,
             >>> )
             >>> prof = trainer.profile_fit(profiler, epochs=1, small_run=64)
         """
@@ -1547,15 +1540,13 @@ class Trainer:
             self.config.epocshs = epochs
         # use a smaller set of training samples for profiling
         if small_run:
-            self.setup_small_run(small_run)
+            self.config.small_run = small_run
         # run profiler
         self.config.run_eval = False
         self.config.test_delay_epochs = 9999999
         self.config.epochs = epochs
         # set a callback to progress the profiler
-        self.callbacks_on_train_step_end = [  # pylint: disable=attribute-defined-outside-init
-            lambda trainer: trainer.torch_profiler.step()
-        ]
+        self.callbacks_on_train_step_end = [lambda trainer: trainer.torch_profiler.step()]  # pylint: disable=attribute-defined-outside-init
         # set the profiler to access in the Trainer
         self.torch_profiler = torch_profiler  # pylint: disable=attribute-defined-outside-init
         # set logger output for Tensorboard
