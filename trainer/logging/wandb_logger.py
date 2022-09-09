@@ -72,7 +72,7 @@ class WandbLogger(BaseDashboardLogger):
 
     def flush(self, step=None):
         if self.run:
-            wandb.log(self.log_dict, step=step)
+            wandb.log(self.log_dict)
         self.log_dict = {}
 
     def finish(self):
