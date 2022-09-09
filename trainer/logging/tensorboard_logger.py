@@ -64,7 +64,7 @@ class TensorboardLogger(BaseDashboardLogger):
             except RuntimeError:
                 traceback.print_exc()
 
-    def flush(self):
+    def flush(self, step=None):
         self.writer.flush()
 
     def finish(self):
