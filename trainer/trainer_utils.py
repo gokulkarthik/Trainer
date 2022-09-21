@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 from trainer.logger import logger
-from trainer.torch import NoamLR, StepwiseGradualLR
+from trainer.torch import NoamLR, StepwiseGradualLR, NoamLRStepConstant, NoamLRStepDecay
 from trainer.utils.distributed import rank_zero_logger_info
 
 
@@ -102,6 +102,10 @@ def get_scheduler(
         return None
     if lr_scheduler.lower() == "noamlr":
         scheduler = NoamLR
+    elif lr_scheduler.lower() == "noamlrstepconstant":
+        scheduler = NoamLRStepConstant
+    elif lr_scheduler.lower() == "noamlrstepdecay":
+        scheduler = NoamLRStepDecay
     elif lr_scheduler.lower() == "stepwisegraduallr":
         scheduler = StepwiseGradualLR
     else:

@@ -167,6 +167,12 @@ class TrainerConfig(Coqpit):
     lr_scheduler_params: Dict = field(
         default_factory=dict, metadata={"help": "Learning rate scheduler(s) arguments. Defaults to {}"}
     )
+    lr_scheduler_aligner: Union[str, List[str]] = field(
+        default=None, metadata={"help": "Learning rate scheduler(s) to use. Defaults to None"}
+    )
+    lr_scheduler_aligner_params: Dict = field(
+        default_factory=dict, metadata={"help": "Learning rate scheduler(s) arguments. Defaults to {}"}
+    )
     use_grad_scaler: bool = field(
         default=False,
         metadata={
@@ -986,7 +992,7 @@ class Trainer:
 
         # set gradient clipping threshold
         if "grad_clip" in config and config.grad_clip is not None:
-            if optimizer_idx is not None:
+            if optimizer_idx is not None and isinstance(config.grad_clip, list):
                 grad_clip = config.grad_clip[optimizer_idx]
             else:
                 grad_clip = config.grad_clip
@@ -1649,9 +1655,23 @@ class Trainer:
             except NotImplementedError:
                 scheduler = None
         if scheduler is None:
-            lr_scheduler = config.lr_scheduler
-            lr_scheduler_params = config.lr_scheduler_params
-            return get_scheduler(lr_scheduler, lr_scheduler_params, optimizer)
+            if isinstance(optimizer, list):
+                lr_schedulers = []
+                for idx, opt in enumerate(optimizer):
+                    if config.lr_scheduler_aligner:
+                        if idx == 1:
+                            lr_scheduler = get_scheduler(config.lr_scheduler_aligner, config.lr_scheduler_aligner_params, opt)
+                            lr_schedulers.append(lr_scheduler)
+                        else:
+                            lr_scheduler = get_scheduler(config.lr_scheduler, config.lr_scheduler_params, opt)
+                            lr_schedulers.append(lr_scheduler)
+                    else:                       
+                        raise ValueError()
+                return lr_schedulers
+            else:
+                lr_scheduler = config.lr_scheduler
+                lr_scheduler_params = config.lr_scheduler_params
+                return get_scheduler(lr_scheduler, lr_scheduler_params, optimizer)
         return scheduler
 
     @staticmethod
